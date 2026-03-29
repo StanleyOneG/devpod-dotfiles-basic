@@ -1,0 +1,55 @@
+#!/bin/bash
+
+set -e # Exit on error
+
+# Resolve dotfiles directory (don't rely on $PWD — DevPod may run this from anywhere)
+DOTFILES_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+export XDG_CONFIG_HOME="$HOME"/.config
+mkdir -p "$XDG_CONFIG_HOME"
+mkdir -p "$XDG_CONFIG_HOME"/nixpkgs
+mkdir -p "$XDG_CONFIG_HOME"/nix
+
+# Enable nix flakes
+echo "experimental-features = nix-command flakes" >"$XDG_CONFIG_HOME/nix/nix.conf"
+
+# Create symlinks
+ln -sf "$DOTFILES_DIR/.zshrc" "$HOME/.zshrc"
+ln -sf "$DOTFILES_DIR/config.nix" "$XDG_CONFIG_HOME"/nixpkgs/config.nix
+
+# Install Nix packages from config.nix
+echo "Installing Nix packages..."
+nix-env -iA nixpkgs.myPackages
+
+# Source Nix profile to make newly installed packages available
+# shellcheck disable=SC1090
+if [ -e ~/.nix-profile/etc/profile.d/nix.sh ]; then
+  . ~/.nix-profile/etc/profile.d/nix.sh
+fi
+export PATH="$HOME/.nix-profile/bin:$HOME/.local/bin:$PATH"
+
+# npm global dir (Nix store is read-only)
+mkdir -p "$HOME/.npm-global"
+export NPM_CONFIG_PREFIX="$HOME/.npm-global"
+export PATH="$HOME/.npm-global/bin:$PATH"
+
+# Install Claude Code
+if ! type -P claude &>/dev/null; then
+  echo "Installing Claude Code..."
+  npm install -g @anthropic-ai/claude-code
+  echo "✓ Claude Code installed"
+else
+  echo "✓ Claude Code already installed, skipping"
+fi
+
+# Skip onboarding when using CLAUDE_CODE_OAUTH_TOKEN (workaround for github.com/anthropics/claude-code/issues/8938)
+if [ -n "$CLAUDE_CODE_OAUTH_TOKEN" ]; then
+  CLAUDE_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+  mkdir -p "$CLAUDE_DIR"
+  if [ ! -f "$CLAUDE_DIR/.claude.json" ]; then
+    echo '{"hasCompletedOnboarding":true}' >"$CLAUDE_DIR/.claude.json"
+    echo "✓ Claude Code onboarding skipped (using OAuth token)"
+  fi
+fi
+
+echo "✅ Setup complete!"
